@@ -8,7 +8,6 @@ class Lessons(models.Model):
 
 class Sounds(models.Model):
 	xenocanto_url = models.URLField(max_length=200)
-	species_name = models.CharField(max_length=100)
 	waveform_path = models.FilePathField(path=None)
 	spectrogram_path = models.FilePathField(path=None)
 	species = models.ForeignKey('Species', related_name="sp")
@@ -29,13 +28,20 @@ class Species(models.Model):
 		return u'%s' % self.eng_name
 
 
+class PlaylistTypes(models.Model):
+	playlist_type = models.CharField(max_length=20)
+
+	def __unicode__(self):
+		return u'%s' % self.playlist_type
+
+
 class Playlists(models.Model):
 	playlist_name = models.CharField(max_length=50)
-	playlist_type = models.CharField(max_length=20)
+	playlist_type = models.ForeignKey('PlaylistTypes', related_name="playlist-type")
 	added_date = models.DateTimeField(auto_now_add=True)
 
 	def __unicode__(self):
-		return u'%s - %s' % (self.playlist_name, self.playlist_type)
+		return u'%s - %d' % (self.playlist_name, self.playlist_type)
 
 
 class Annotations(models.Model):
@@ -45,7 +51,7 @@ class Annotations(models.Model):
 	wave_offset = models.FloatField()
 	spec_onset = models.FloatField()
 	spec_offset= models.FloatField()
-	species = models.CharField(max_length=100)
+	species = models.ForeignKey('Species', related_name="ann-species")
 	added_date = models.DateTimeField(auto_now_add=True)
 
 	class Meta:
@@ -53,11 +59,11 @@ class Annotations(models.Model):
 
 
 class GroundTruth(models.Model):
-	sound = models.ForeignKey('Sounds', related_name="anno")
-	user = models.ForeignKey('auth.User', related_name="anno")
+	sound = models.ForeignKey('Sounds', related_name="truth")
+	user = models.ForeignKey('auth.User', related_name="truth")
 	wave_onset = models.FloatField()
 	wave_offset = models.FloatField()
 	spec_onset = models.FloatField()
 	spec_offset= models.FloatField()
-	species = models.ForeignKey('Species', related_name="species")
+	species = models.ForeignKey('Species', related_name="truth-species")
 	added_date = models.DateTimeField(auto_now_add=True)

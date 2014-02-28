@@ -5,17 +5,11 @@ from django.contrib.auth.models import User
 
 
 class SoundSerializer(serializers.ModelSerializer):
-	annotations = serializers.PrimaryKeyRelatedField(many=True)
-	# annotations = serializers.HyperlinkedRelatedField(many=True,
-	# 							read_only=True, 
-	# 							view_name='annotation-detail',
-	# 							format='html')
 
 	class Meta:
 		model = Sounds
-		fields = ('id', 'xenocanto_url', 'species_name', 'species',
-			'waveform_path', 'spectrogram_path', 'added_date', 
-			'annotations')
+		fields = ('id', 'xenocanto_url', 'species',
+			'waveform_path', 'spectrogram_path', 'added_date')
 
 
 class AnnotationSerializer(serializers.ModelSerializer):
@@ -38,6 +32,7 @@ class AnnotationSerializer(serializers.ModelSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
 	annotations = serializers.PrimaryKeyRelatedField(many=True)
+	truth = serializers.PrimaryKeyRelatedField(many=True)
 	# annotations = serializers.HyperlinkedRelatedField(many=True,
 	# 						read_only=True, 
 	# 						view_name='annotation-detail',
@@ -45,7 +40,7 @@ class UserSerializer(serializers.ModelSerializer):
 
 	class Meta:
 		model = User
-		fields = ('id', 'username', 'annotations')
+		fields = ('id', 'username', 'annotations', 'truth')
 
 
 class PlaylistSerializer(serializers.ModelSerializer):
