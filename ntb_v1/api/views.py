@@ -1,12 +1,14 @@
-from api.models import Sounds, Annotations, Lessons, Playlists, Species, GroundTruth
-from api.serializers import SoundSerializer, AnnotationSerializer, SpeciesSerializer
-from api.serializers import UserSerializer, PlaylistSerializer, LessonSerializer, GroundTruthSerializer
+from api.models import Sounds, Annotations, Lessons, Playlists, Species, GroundTruth, PlaylistTypes
+from api.serializers import SoundSerializer, AnnotationSerializer, SpeciesSerializer, UserSerializer, PlaylistSerializer, LessonSerializer, GroundTruthSerializer, PlaylistTypeSerializer, SpeciesSerializer
 from api.permissions import IsOwnerOrReadOnly
-from rest_framework import generics, permissions, renderers
+from rest_framework import generics, permissions
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework.reverse import reverse
 from django.contrib.auth.models import User
+from django.core.exceptions import ObjectDoesNotExist
+from libs import xeno_canto as xc
+from libs import create_lesson as cl
 
 
 @api_view(('GET',))
@@ -18,11 +20,13 @@ def api_root(request, format=None):
 		'playlists': reverse('playlist-list', request=request, format=format),
 		'lessons': reverse('lesson-list', request=request, format=format),
 		'truth': reverse('groundtruth-list', request=request, format=format),
+		'species': reverse('species-list', request=request, format=format),
 	})
+
 
 class SoundList(generics.ListCreateAPIView):
 	"""
-	List all sounds
+	List all sounds, create a sound
 	"""
 	queryset = Sounds.objects.all()
 	serializer_class = SoundSerializer
@@ -38,7 +42,7 @@ class SoundDetail(generics.RetrieveUpdateDestroyAPIView):
 
 class AnnotationList(generics.ListCreateAPIView):
 	"""
-	List all annotations
+	List all annotations, create an annotation
 	"""
 	queryset = Annotations.objects.all()
 	serializer_class = AnnotationSerializer
@@ -73,31 +77,196 @@ class UserDetail(generics.RetrieveAPIView):
 
 class PlaylistList(generics.ListCreateAPIView):
 	"""
-	List all sounds
+	List all playlists, create a playlist
 	"""
-	queryset = Playlists.objects.all()
+	# queryset = Playlists.objects.all()
 	serializer_class = PlaylistSerializer
+
+	def get_queryset(self):
+		"""
+		Optionally restricts the returned playlists
+		according to a given playlist_type, by filtering
+		against a "playlist_type" query parameter in 
+		the URL.
+		Multiple query params must be separated by: &
+		"""
+		
+		queryset = Playlists.objects.all()
+		
+		playlist_type = self.request.QUERY_PARAMS.get('playlist_type', None)
+		playlist_name = self.request.QUERY_PARAMS.get('playlist_name', None)
+
+		if playlist_type is not None:
+			queryset = queryset.filter(playlist_type=playlist_type)
+
+		if playlist_name is not None:
+			queryset = queryset.filter(playlist_name=playlist_name)
+
+		return queryset
+
+	def post(self, request, *args, **kwargs):
+
+		# Get the playlist_type and query_params from post body
+		playlist_type = request.POST.get('playlist_type')
+		playlist_name = request.POST.get('playlist_name')
+		csv_filename = request.POST.get('csv_filename')
+
+		# csv_filename = '/Users/aemarse/Documents/devel/NameThatBird/bird_lists/central_park.csv'
+		print 'playlist_type: ' + playlist_type
+		print 'playlist_name: ' + playlist_name
+		print 'csv_filename:  ' + csv_filename
+
+		# Create a new Playlist object
+		resp = self.create(request, *args, **kwargs)
+
+		# Get the Playlist object we just created so we can modify it further
+		pl_id = resp.data['id']
+		self.curr_playlist = Playlists.objects.get(pk=pl_id)
+
+		# Get species list 
+		lesson = cl.Lesson()
+		lesson.filepath = csv_filename
+		sp_list = []
+		sp_list = lesson.csv_to_list()
+		print sp_list
+
+		list_len = len(sp_list)
+		print list_len
+
+		# Get list of id's
+		id_list = []
+		id_list = self.sp_to_id(sp_list)
+		print id_list
+		print len(id_list)
+
+		num_species = len(id_list) / 5
+
+	def sp_to_id(self, sp_list):
+
+		# Instantiate a Lessons object
+		l = Lessons()
+		l.playlist = self.curr_playlist
+		l.save()
+
+		# Initialize a list for saving the pks of sounds
+		snd_pks = []
+
+		# Loop through the returned species
+		id_list = []
+		for name in sp_list:
+			# Instantiate a XenoCantoObject
+			xc_obj = xc.XenoCantoObject()
+
+			# Query xeno-canto
+			xc_obj.setName(name)
+			xc_obj.makeUrl()
+			json_obj = xc_obj.get()
+			xc_obj.decode(json_obj)
+			recs = xc_obj.recs
+
+			# If there are enough recordings
+			if len(recs) >= 5:
+
+				# Loop through the recordings	
+				num_recs = 0
+				for rec in recs:
+
+					# Break if we exceed the desired number of recordings
+					if num_recs > 4:
+						break
+
+					# Get the id of the current sound
+					curr_id = rec['id']
+					curr_sp_name = rec['en']
+
+					# Check if it is already in the db
+					try:
+						s = Sounds.objects.get(xc_id=curr_id)
+					except ObjectDoesNotExist:
+						# If no, then add to db, id_list
+						s = Sounds()
+						s.xc_id = curr_id
+						s.xenocanto_url = ''
+						s.waveform_path = '/' + str(s.xc_id) + '.dat'
+						s.spectrogram_path = '/' + str(s.xc_id) + '.spec'
+
+						# Figure out if there's a species object that matches the species name
+						try:
+							sp = Species.objects.get(eng_name=curr_sp_name)
+							# If there's not one, create it
+						except ObjectDoesNotExist:
+							sp = Species(eng_name=curr_sp_name)
+							sp.save()
+
+						# Add the species to the current sound
+						s.species = sp
+
+						# Save the sound
+						s.save()
+						snd_pks.append(s.pk)
+
+						# Add the sound to the lesson
+						# l.sounds.add(s)
+
+					id_list.append(curr_id)
+					num_recs += 1
+
+		l.sounds = snd_pks
+		l.save()
+
+		return id_list
 
 
 class PlaylistDetail(generics.RetrieveUpdateDestroyAPIView):
 	"""
-	Retrieve, update, or delete a sound instance
+	Retrieve, update, or delete a playlist instance
 	"""
 	queryset = Playlists.objects.all()
 	serializer_class = PlaylistSerializer
 
 
+class PlaylistTypeList(generics.ListAPIView):
+	"""
+	List all playlist types
+	"""
+	queryset = PlaylistTypes.objects.all()
+	serializer_class = PlaylistTypeSerializer
+
+
 class LessonList(generics.ListCreateAPIView):
 	"""
-	List all sounds
+	List all lessons, create a lesson
 	"""
-	queryset = Lessons.objects.all()
+	# queryset = Lessons.objects.all()
 	serializer_class = LessonSerializer
+
+	def get_queryset(self):
+		"""
+		Optionally restricts the returned playlists
+		according to a given playlist_type, by filtering
+		against a "playlist_type" query parameter in 
+		the URL.
+		Multiple query params must be separated by: &
+		"""
+		
+		queryset = Lessons.objects.all()
+
+		the_id = self.request.QUERY_PARAMS.get('id', None)
+		playlist = self.request.QUERY_PARAMS.get('playlist', None)
+		sounds = self.request.QUERY_PARAMS.get('sounds', None)
+
+		if the_id is not None:
+			queryset = queryset.filter(id=the_id)
+
+		if playlist is not None:
+			queryset = queryset.filter(playlist=playlist)
+
+		return queryset
 
 
 class LessonDetail(generics.RetrieveUpdateDestroyAPIView):
 	"""
-	Retrieve, update, or delete a sound instance
+	Retrieve, update, or delete a lesson instance
 	"""
 	queryset = Lessons.objects.all()
 	serializer_class = LessonSerializer
@@ -105,7 +274,7 @@ class LessonDetail(generics.RetrieveUpdateDestroyAPIView):
 
 class GroundTruthList(generics.ListCreateAPIView):
 	"""
-	List all sounds
+	List all ground truths, create a ground truth
 	"""
 	queryset = GroundTruth.objects.all()
 	serializer_class = GroundTruthSerializer
@@ -113,7 +282,23 @@ class GroundTruthList(generics.ListCreateAPIView):
 
 class GroundTruthDetail(generics.RetrieveUpdateDestroyAPIView):
 	"""
-	Retrieve, update, or delete a sound instance
+	Retrieve, update, or delete a ground truth instance
 	"""
 	queryset = GroundTruth.objects.all()
 	serializer_class = GroundTruthSerializer
+
+
+class SpeciesList(generics.ListCreateAPIView):
+	"""
+	List all species, create a species
+	"""
+	queryset = Species.objects.all()
+	serializer_class = SpeciesSerializer
+
+
+class SpeciesDetail(generics.RetrieveUpdateDestroyAPIView):
+	"""
+	Retrieve, update, or delete a species instance
+	"""
+	queryset = Species.objects.all()
+	serializer_class = SpeciesSerializer

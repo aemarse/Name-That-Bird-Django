@@ -1,6 +1,5 @@
 from rest_framework import serializers
-from api.models import Sounds, Annotations, Lessons
-from api.models import Playlists, Species, GroundTruth
+from api.models import Sounds, Annotations, Lessons, Species, Playlists, Species, GroundTruth, PlaylistTypes
 from django.contrib.auth.models import User
 
 
@@ -8,8 +7,15 @@ class SoundSerializer(serializers.ModelSerializer):
 
 	class Meta:
 		model = Sounds
-		fields = ('id', 'xenocanto_url', 'species',
-			'waveform_path', 'spectrogram_path', 'added_date')
+		fields = ('id', 'xc_id', 'species', 'waveform_path',
+			'spectrogram_path', 'added_date')
+
+
+class SpeciesSerializer(serializers.ModelSerializer):
+
+	class Meta:
+		model = Species
+		fields = ('id', 'eng_name')
 
 
 class AnnotationSerializer(serializers.ModelSerializer):
@@ -74,3 +80,10 @@ class GroundTruthSerializer(serializers.ModelSerializer):
 		fields = ('id', 'user', 'sound', 'wave_onset', 'wave_offset', 
 			'spec_onset', 'spec_offset', 'species', 
 			'added_date')
+
+
+class PlaylistTypeSerializer(serializers.ModelSerializer):
+
+	class Meta:
+		model = PlaylistTypes
+		fields = ('id', 'playlist_type')

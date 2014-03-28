@@ -8,6 +8,7 @@ class Lessons(models.Model):
 
 class Sounds(models.Model):
 	xenocanto_url = models.URLField(max_length=200)
+	xc_id = models.IntegerField()
 	waveform_path = models.FilePathField(path=None)
 	spectrogram_path = models.FilePathField(path=None)
 	species = models.ForeignKey('Species', related_name="sp")
